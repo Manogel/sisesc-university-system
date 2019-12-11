@@ -826,6 +826,51 @@ end if;
 end $$
 
 delimiter ;
+drop procedure if exists pr_matricula_aluno_disciplina;
+delimiter $$
+create procedure pr_matricula_aluno_disciplina(aluno int, id_disciplina_semestre int, n_semestre varchar(7))
+begin
+	if(aluno <= 0 || aluno is null || id_disciplina_semestre <= 0 || id_disciplina_semestre is null || n_semestre is null || n_semestre = '') then
+		select 'Argumentos invalidos';
+	end if;
+    select count(*) into @is_matriculado from vw_aluno_disciplina where ID_ALUNO = aluno && SEMESTRE = n_semestre && ID_CURSO_DISCIPLINA_SEMESTRE = id_disciplina_semestre;
+    if( @is_matriculado > 0 ) then select 'O aluno ja esta matriculado nesta disciplina!'; end if;
+    select count(*) into @num_materias from vw_aluno_disciplina where ID_ALUNO = aluno && SEMESTRE = n_semestre;
+    if ( @num_materias < 5 ) then
+        insert into tbl_aluno_disciplina values (null, aluno, id_disciplina_semestre);
+        select 'Aluno se matriculou!';
+    else
+        select concat('Aluno ja atingiu o número maximo de materias para o semeste ', n_semestre);
+	end if;
+end $$
+delimiter ;
+
+drop procedure if exists pr_cadastra_aluno;
+
+delimiter $$
+create procedure pr_cadastra_aluno(nome varchar(255), sobrenome varchar(255), n_cpf varchar(255), email varchar(255), sexo int, estado int, pai varchar(255), mae varchar(255), turma int)
+begin
+	if ( nome = '' || nome is null || sobrenome = '' || sobrenome is null || n_cpf = '' || n_cpf is null || email = '' || email is null || pai = '' || mae = '' || sexo is null || estado is null || sexo <= 0 || estado <= 0 || turma is null || turma<= 0 ) then
+        select 'Campos invalidos';
+    else
+        insert into tbl_usuarios values (
+        null,
+        nome,
+        sobrenome,
+        n_cpf,
+        estado,
+        sexo,
+        email,
+        pai,
+        mae);
+        
+        select id_usuario into @id_user from tbl_usuarios where cpf = n_cpf;
+		insert into tbl_alunos (fk_id_usuario, fk_id_turma) values (@id_user, turma);
+        select 'Aluno inserido';
+	end if;
+end $$
+
+delimiter ;
 
 
 /*
@@ -1227,3 +1272,23 @@ values
     (4, 5, 10, 60, 1);
 
 insert into tbl_disciplina_dependente values (null, 6, 4, 40), (null, 7, 1, 60);
+
+#MANOEL ALTERACOES
+use sisescII;
+# manoel = 2 / zampar = 1
+
+
+select * from vw_curso_disciplina_semestre;
+select * from vw_aluno_disciplina;
+drop procedure if exists pr_matricula_aluno_disciplina;
+
+call pr_cadastra_aluno('Mathes' , 'Costa', '33222222233', 'matheus@gmail.com', 1, 1, 'Joao', 'Maria', 1);
+
+select * from vw_aluno_disciplina;
+select * from tbl_usuarios;
+select * from vw_aluno_usuario;
+
+select * from vw_aluno_disciplina where ID_ALUNO = 5 && SEMESTRE = '2019.1';
+
+delimiter ;
+call pr_matricula_aluno_disciplina(5, 1, '2019.1');
