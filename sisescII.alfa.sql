@@ -707,6 +707,7 @@ end $$
 
 delimiter ;
 
+drop trigger if exists tr_aluno_disciplina;
 delimiter $$
 create trigger tr_aluno_disciplina before
 insert
@@ -860,34 +861,40 @@ end $$
 delimiter ;
 
 drop procedure if exists pr_matricula_aluno_disciplina;
-call pr_matricula_aluno_disciplina(5, 1, '2019.1');
 delimiter $$
 create procedure pr_matricula_aluno_disciplina(aluno int, id_disciplina_semestre int, n_semestre varchar(7))
-begin
+pr_mad : begin
 	if(aluno <= 0 || aluno is null || id_disciplina_semestre <= 0 || id_disciplina_semestre is null || n_semestre is null || n_semestre = '') then
 		select 'Argumentos invalidos';
+        leave pr_mad;
 	end if;
     
     select ID_DISCIPLINA into @targetDisciplina from vw_curso_disciplina_semestre where ID_CURSO_DISCIPLINA_SEMESTRE = id_disciplina_semestre;
     select fn_verifica_reprovado_3(aluno, @targetDisciplina) into @isReprovado;
-    if( @isReprovado = 1 ) then select 'O aluno ja reprovou nesta disciplina 3 vezes!'; end if;
+    if( @isReprovado = 1 ) then select 'O aluno ja reprovou nesta disciplina 3 vezes!'; leave pr_mad; end if;
 
     select ID_DISCIPLINA_DEPENDENTE, CH_DISCIPLINA_REQUISITO INTO @id_disc_req, @ch_req from vw_disciplina_dependente where ID_CURSO_DISCIPLINA = id_disciplina_semestre;
     if(@id_disc_req is not null) then
 		select fn_checa_disciplina_requisito(aluno, @id_disc_req, @ch_req) into @isValid;
-		if ( @isValid = 0 ) then select 'O aluno não pode se matricular pois não tem o requisito da matéria'; end if;
+		if ( @isValid = 0 ) then 
+			select 'O aluno não pode se matricular pois não tem o requisito da matéria'; 
+            leave pr_mad;
+        end if;
     end if;
     select count(*) into @ja_matriculado from vw_aluno_disciplina where ID_ALUNO = aluno and SEMESTRE = n_semestre and ID_CURSO_DISCIPLINA_SEMESTRE = id_disciplina_semestre;
     if( @ja_matriculado > 0 ) then 
 		select 'O aluno ja esta matriculado nesta disciplina!'; 
+        leave pr_mad;
 	end if;
     
     select count(*) into @num_materias from vw_aluno_disciplina where ID_ALUNO = aluno && SEMESTRE = n_semestre;
     if ( @num_materias < 10 ) then
         insert into tbl_aluno_disciplina values (null, aluno, id_disciplina_semestre);
         select 'Aluno se matriculou!';
+        leave pr_mad;
     else
         select concat('Aluno ja atingiu o número maximo de materias para o semeste ', n_semestre);
+        leave pr_mad;
 	end if;
 end $$
 
@@ -1361,10 +1368,11 @@ call pr_cadastra_aluno('Mathes' , 'Costa', '33222222233', 'matheus@gmail.com', 1
 
 select * from vw_aluno_disciplina where ID_ALUNO = 5 && SEMESTRE = '2019.1';
 
-call pr_matricula_aluno_disciplina(1, 1, '2019.1');
+call pr_matricula_aluno_disciplina(5, 3, '2019.1');
 
 select * from vw_disciplina_dependente;
 
 select * from vw_curso_disciplina_semestre;
 
-
+select * from vw_aluno_disciplina;
+use sisescII;
