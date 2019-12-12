@@ -707,8 +707,6 @@ end $$
 
 delimiter ;
 
-create TRIGGER `insert_login_user` AFTER INSERT ON `tbl_usuarios` FOR EACH ROW INSERT INTO tbl_login VALUES (NULL, new.id_usuario , md5(new.cpf));
-
 drop trigger if exists tr_aluno_disciplina;
 delimiter $$
 create trigger tr_aluno_disciplina before
