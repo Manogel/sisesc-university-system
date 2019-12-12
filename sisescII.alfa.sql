@@ -1,6 +1,6 @@
 drop database if exists sisescII;
-
 create database sisescII;
+SET GLOBAL log_bin_trust_function_creators = 1;
 
 use sisescII;
 
@@ -396,10 +396,13 @@ drop view if exists vw_historico;
 
 create view vw_historico as
 select
+	ID_ALUNO,
     aluno.nome as NOME,
     aluno.sobrenome as SOBRENOME,
     cds.disciplina as DISCIPLINA,
     cds.curso as CURSO,
+    CARGA_HORARIA,
+    ID_CURSO_DISCIPLINA,
     cds.semestre as SEMESTRE,
     historico.nota as NOTA,
     historico.frequencia as FREQUENCIA,
@@ -411,6 +414,7 @@ from
         historico.fk_id_curso_disciplina_semestre = cds.id_curso_disciplina_semestre
     )
     join tbl_situacao as situacao on (historico.fk_id_situacao = situacao.id_situacao);
+
 
 drop view if exists vw_professor_disciplina;
 
@@ -654,7 +658,7 @@ set
 
 end $ 
 
-delimiter;
+delimiter ;
 
 /*
  #
@@ -826,24 +830,7 @@ end if;
 end $$
 
 delimiter ;
-drop procedure if exists pr_matricula_aluno_disciplina;
-delimiter $$
-create procedure pr_matricula_aluno_disciplina(aluno int, id_disciplina_semestre int, n_semestre varchar(7))
-begin
-	if(aluno <= 0 || aluno is null || id_disciplina_semestre <= 0 || id_disciplina_semestre is null || n_semestre is null || n_semestre = '') then
-		select 'Argumentos invalidos';
-	end if;
-    select count(*) into @is_matriculado from vw_aluno_disciplina where ID_ALUNO = aluno && SEMESTRE = n_semestre && ID_CURSO_DISCIPLINA_SEMESTRE = id_disciplina_semestre;
-    if( @is_matriculado > 0 ) then select 'O aluno ja esta matriculado nesta disciplina!'; end if;
-    select count(*) into @num_materias from vw_aluno_disciplina where ID_ALUNO = aluno && SEMESTRE = n_semestre;
-    if ( @num_materias < 5 ) then
-        insert into tbl_aluno_disciplina values (null, aluno, id_disciplina_semestre);
-        select 'Aluno se matriculou!';
-    else
-        select concat('Aluno ja atingiu o número maximo de materias para o semeste ', n_semestre);
-	end if;
-end $$
-delimiter ;
+
 
 drop procedure if exists pr_cadastra_aluno;
 
@@ -870,6 +857,45 @@ begin
 	end if;
 end $$
 
+delimiter ;
+
+drop procedure if exists pr_matricula_aluno_disciplina;
+delimiter $$
+create procedure pr_matricula_aluno_disciplina(aluno int, id_disciplina_semestre int, n_semestre varchar(7))
+begin
+	if(aluno <= 0 || aluno is null || id_disciplina_semestre <= 0 || id_disciplina_semestre is null || n_semestre is null || n_semestre = '') then
+		select 'Argumentos invalidos';
+	end if;
+    
+    select ID_DISCIPLINA_DEPENDENTE, CH_DISCIPLINA_REQUISITO INTO @id_disc_req, @ch_req from vw_disciplina_dependente where ID_CURSO_DISCIPLINA = id_disciplina_semestre;
+    if(@id_disc_req is not null) then
+		select fn_checa_disciplina_requisito(aluno, @id_disc_req, @ch_req) into @isValid;
+		if ( @isValid = 0 ) then select 'O aluno não pode se matricular pois não tem o requisito da matéria'; end if;
+    end if;
+    select count(*) into @is_matriculado from vw_aluno_disciplina where ID_ALUNO = aluno && SEMESTRE = n_semestre && ID_CURSO_DISCIPLINA_SEMESTRE = id_disciplina_semestre;
+    if( @is_matriculado > 0 ) then select 'O aluno ja esta matriculado nesta disciplina!'; end if;
+    
+    select count(*) into @num_materias from vw_aluno_disciplina where ID_ALUNO = aluno && SEMESTRE = n_semestre;
+    if ( @num_materias < 5 ) then
+        insert into tbl_aluno_disciplina values (null, aluno, id_disciplina_semestre);
+        select 'Aluno se matriculou!';
+    else
+        select concat('Aluno ja atingiu o número maximo de materias para o semeste ', n_semestre);
+	end if;
+end $$
+
+delimiter ;
+
+drop function if exists fn_checa_disciplina_requisito;
+delimiter $$
+create function fn_checa_disciplina_requisito(aluno int, disciplina_dependente int, hora_min int) returns bool
+begin
+	select COUNT(*) INTO @is_valid from vw_historico where ID_ALUNO = aluno and ID_CURSO_DISCIPLINA = disciplina_dependente and RESULTADO = "APROVADO" and CARGA_HORARIA >= hora_min;
+    if (@is_valid = 0) then 
+		return false;
+	end if;
+    return true;
+end $$
 delimiter ;
 
 
@@ -1273,22 +1299,10 @@ values
 
 insert into tbl_disciplina_dependente values (null, 6, 4, 40), (null, 7, 1, 60);
 
-#MANOEL ALTERACOES
-use sisescII;
-# manoel = 2 / zampar = 1
-
-
-select * from vw_curso_disciplina_semestre;
-select * from vw_aluno_disciplina;
-drop procedure if exists pr_matricula_aluno_disciplina;
-
 call pr_cadastra_aluno('Mathes' , 'Costa', '33222222233', 'matheus@gmail.com', 1, 1, 'Joao', 'Maria', 1);
-
-select * from vw_aluno_disciplina;
-select * from tbl_usuarios;
-select * from vw_aluno_usuario;
 
 select * from vw_aluno_disciplina where ID_ALUNO = 5 && SEMESTRE = '2019.1';
 
-delimiter ;
-call pr_matricula_aluno_disciplina(5, 1, '2019.1');
+call pr_matricula_aluno_disciplina(5, 7, '2019.1');
+
+
