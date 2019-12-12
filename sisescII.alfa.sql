@@ -369,6 +369,7 @@ create view vw_curso_disciplina as
 select
     curso.nome as CURSO,
     curso.codigo as CODIGO_CURSO,
+    disciplina.id_disciplina as ID_DISCIPLINA,
     disciplina.nome as DISCIPLINA,
     cd.carga_horaria as CARGA_HORARIA,
     cd.quantidade_alunos as QUANTIDADE_ALUNOS,
@@ -393,12 +394,12 @@ from
     join tbl_semestres as semestre on (cds.fk_id_semestre = semestre.id_semestre);
 
 drop view if exists vw_historico;
-
 create view vw_historico as
 select
 	ID_ALUNO,
     aluno.nome as NOME,
     aluno.sobrenome as SOBRENOME,
+    ID_DISCIPLINA,
     cds.disciplina as DISCIPLINA,
     cds.curso as CURSO,
     CARGA_HORARIA,
@@ -415,11 +416,10 @@ from
     )
     join tbl_situacao as situacao on (historico.fk_id_situacao = situacao.id_situacao);
 
-
 drop view if exists vw_professor_disciplina;
-
 create view vw_professor_disciplina as
 select
+	ID_PROFESSOR,
     cds.disciplina as DISCIPLINA,
     cds.curso as CURSO,
     cds.semestre as SEMESTRE,
@@ -860,6 +860,7 @@ end $$
 delimiter ;
 
 drop procedure if exists pr_matricula_aluno_disciplina;
+call pr_matricula_aluno_disciplina(5, 1, '2019.1');
 delimiter $$
 create procedure pr_matricula_aluno_disciplina(aluno int, id_disciplina_semestre int, n_semestre varchar(7))
 begin
@@ -867,16 +868,22 @@ begin
 		select 'Argumentos invalidos';
 	end if;
     
+    select ID_DISCIPLINA into @targetDisciplina from vw_curso_disciplina_semestre where ID_CURSO_DISCIPLINA_SEMESTRE = id_disciplina_semestre;
+    select fn_verifica_reprovado_3(aluno, @targetDisciplina) into @isReprovado;
+    if( @isReprovado = 1 ) then select 'O aluno ja reprovou nesta disciplina 3 vezes!'; end if;
+
     select ID_DISCIPLINA_DEPENDENTE, CH_DISCIPLINA_REQUISITO INTO @id_disc_req, @ch_req from vw_disciplina_dependente where ID_CURSO_DISCIPLINA = id_disciplina_semestre;
     if(@id_disc_req is not null) then
 		select fn_checa_disciplina_requisito(aluno, @id_disc_req, @ch_req) into @isValid;
 		if ( @isValid = 0 ) then select 'O aluno não pode se matricular pois não tem o requisito da matéria'; end if;
     end if;
-    select count(*) into @is_matriculado from vw_aluno_disciplina where ID_ALUNO = aluno && SEMESTRE = n_semestre && ID_CURSO_DISCIPLINA_SEMESTRE = id_disciplina_semestre;
-    if( @is_matriculado > 0 ) then select 'O aluno ja esta matriculado nesta disciplina!'; end if;
+    select count(*) into @ja_matriculado from vw_aluno_disciplina where ID_ALUNO = aluno and SEMESTRE = n_semestre and ID_CURSO_DISCIPLINA_SEMESTRE = id_disciplina_semestre;
+    if( @ja_matriculado > 0 ) then 
+		select 'O aluno ja esta matriculado nesta disciplina!'; 
+	end if;
     
     select count(*) into @num_materias from vw_aluno_disciplina where ID_ALUNO = aluno && SEMESTRE = n_semestre;
-    if ( @num_materias < 5 ) then
+    if ( @num_materias < 10 ) then
         insert into tbl_aluno_disciplina values (null, aluno, id_disciplina_semestre);
         select 'Aluno se matriculou!';
     else
@@ -885,6 +892,44 @@ begin
 end $$
 
 delimiter ;
+
+drop procedure if exists pr_tranca_matricula_aluno;
+delimiter $$
+create procedure pr_tranca_matricula_aluno(aluno int, n_semestre varchar(10))
+begin
+	if(aluno = 0 || aluno is null || n_semestre = '' || n_semestre is null ) then
+		select 'Argumentos inválidos';
+	end if;
+
+	select count(*), NOME into @isValid, @aluno from vw_aluno_disciplina where ID_USUARIO = aluno and SEMESTRE = n_semestre;
+	if ( @isValid = 0 ) then 
+		select concat('O aluno ', @aluno, ' trancou o semestre!');
+	else
+		select concat('Não é possivel trancar o semestre pois o aluno ', @aluno, ' esta matriculado em ', @isValid, ' disciplinas!' );
+    end if;
+    
+end $$
+delimiter ;
+
+drop procedure if exists pr_matricula_professor_disciplina;
+delimiter $$
+create procedure pr_matricula_professor_disciplina(professor int, disc_semestre int, n_semestre varchar(10))
+begin 
+	if ( professor = '' || professor is null || disc_semestre = '' || disc_semestre is null || n_semestre = '' || n_semestre is null ) then
+        select 'Campos invalidos';
+	end if;
+	select count(*) into @isValid from vw_professor_disciplina where ID_PROFESSOR = professor and SEMESTRE = n_semestre;
+	if(@isValid < 4) then
+		insert into tbl_professor_disciplina(fk_id_professor, fk_id_curso_disciplina_semestre) values (professor, disc_semestre);
+	else 
+		select concat('O professor só pode esta matriculado em no máximo 5 disciplinas!');
+    end if;
+end $$
+delimiter ; 
+
+/*
+ -- FUNÇÕES
+*/
 
 drop function if exists fn_checa_disciplina_requisito;
 delimiter $$
@@ -898,6 +943,19 @@ begin
 end $$
 delimiter ;
 
+drop function if exists fn_verifica_reprovado_3;
+
+delimiter $$
+create function fn_verifica_reprovado_3(aluno int, n_disciplina int) returns bool
+begin
+	select count(*) into @isValid from vw_historico where ID_ALUNO = aluno and ID_DISCIPLINA = n_disciplina and RESULTADO = "REPROVADO";
+    if ( @isValid = 3 ) then 
+		return true;
+	else 
+		return false;
+	end if;
+end $$
+delimiter ;
 
 /*
  #
@@ -1303,6 +1361,10 @@ call pr_cadastra_aluno('Mathes' , 'Costa', '33222222233', 'matheus@gmail.com', 1
 
 select * from vw_aluno_disciplina where ID_ALUNO = 5 && SEMESTRE = '2019.1';
 
-call pr_matricula_aluno_disciplina(5, 7, '2019.1');
+call pr_matricula_aluno_disciplina(1, 1, '2019.1');
+
+select * from vw_disciplina_dependente;
+
+select * from vw_curso_disciplina_semestre;
 
 
